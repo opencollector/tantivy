@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 /// text in `tantivy`.
 use std::borrow::{Borrow, BorrowMut};
 use std::ops::{Deref, DerefMut};
+use downcast_rs::impl_downcast;
 
 /// Token
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -39,13 +40,20 @@ impl Default for Token {
 ///
 /// It simply wraps a `Tokenizer` and a list of `TokenFilter` that are applied sequentially.
 pub struct TextAnalyzer {
-    tokenizer: Box<dyn Tokenizer>,
+    /// The `Tokenizer` wrapped by this `TextAnalyzer`.
+    pub tokenizer: Box<dyn Tokenizer>,
     token_filters: Vec<BoxTokenFilter>,
 }
 
 impl<T: Tokenizer> From<T> for TextAnalyzer {
     fn from(tokenizer: T) -> Self {
         TextAnalyzer::new(tokenizer, Vec::new())
+    }
+}
+
+impl From<Box<dyn Tokenizer>> for TextAnalyzer {
+    fn from(tokenizer: Box<dyn Tokenizer>) -> Self {
+        TextAnalyzer::new_with_boxed_tokenizer(tokenizer, Vec::new())
     }
 }
 
@@ -57,6 +65,17 @@ impl TextAnalyzer {
     pub fn new<T: Tokenizer>(tokenizer: T, token_filters: Vec<BoxTokenFilter>) -> TextAnalyzer {
         TextAnalyzer {
             tokenizer: Box::new(tokenizer),
+            token_filters,
+        }
+    }
+
+    /// Creates a new `TextAnalyzer` given a boxed tokenizer and a vector of `BoxTokenFilter`.
+    ///
+    /// When creating a `TextAnalyzer` from a `Tokenizer` alone, prefer using
+    /// `TextAnalyzer::from(tokenizer)`.
+    pub fn new_with_boxed_tokenizer(tokenizer: Box<dyn Tokenizer>, token_filters: Vec<BoxTokenFilter>) -> TextAnalyzer {
+        TextAnalyzer {
+            tokenizer,
             token_filters,
         }
     }
@@ -138,10 +157,12 @@ impl Clone for TextAnalyzer {
 /// # Warning
 ///
 /// This API may change to use associated types.
-pub trait Tokenizer: 'static + Send + Sync + TokenizerClone {
+pub trait Tokenizer: 'static + Send + Sync + TokenizerClone + downcast_rs::Downcast {
     /// Creates a token stream for a given `str`.
     fn token_stream<'a>(&self, text: &'a str) -> BoxTokenStream<'a>;
 }
+
+impl_downcast!(Tokenizer);
 
 pub trait TokenizerClone {
     fn box_clone(&self) -> Box<dyn Tokenizer>;
