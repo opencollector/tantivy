@@ -98,6 +98,7 @@ pub use histogram_collector::HistogramCollector;
 
 mod multi_collector;
 pub use self::multi_collector::MultiCollector;
+pub use self::multi_collector::FruitHandle;
 
 mod top_collector;
 
@@ -113,6 +114,7 @@ pub use self::tweak_score_top_collector::{ScoreSegmentTweaker, ScoreTweaker};
 mod facet_collector;
 pub use self::facet_collector::FacetCollector;
 pub use self::facet_collector::FacetCounts;
+pub use self::facet_collector::FacetChildIterator;
 use crate::query::Weight;
 
 mod docset_collector;

@@ -38,6 +38,15 @@ impl TokenizerManager {
             .insert(tokenizer_name.to_string(), boxed_tokenizer);
     }
 
+    /// Registers a boxed tokenizer associated with a given name.
+    pub fn register_boxed(&self, tokenizer_name: &str, tokenizer: TextAnalyzer)
+    {
+        self.tokenizers
+            .write()
+            .expect("Acquiring the lock should never fail")
+            .insert(tokenizer_name.to_string(), tokenizer);
+    }
+
     /// Accessing a tokenizer given its name.
     pub fn get(&self, tokenizer_name: &str) -> Option<TextAnalyzer> {
         self.tokenizers
