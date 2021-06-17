@@ -88,6 +88,17 @@ pub struct FruitHandle<TFruit: Fruit> {
     _phantom: PhantomData<TFruit>,
 }
 
+impl<TFruit: Fruit> Copy for FruitHandle<TFruit> {}
+
+impl<TFruit: Fruit> Clone for FruitHandle<TFruit> {
+    fn clone(&self) -> FruitHandle<TFruit> {
+        return FruitHandle::<TFruit> {
+            pos: self.pos,
+            _phantom: PhantomData,
+        };
+    }
+}
+
 impl<TFruit: Fruit> FruitHandle<TFruit> {
     pub fn extract(self, fruits: &mut MultiFruit) -> TFruit {
         let boxed_fruit = fruits.sub_fruits[self.pos].take().expect("");
@@ -280,5 +291,18 @@ mod tests {
 
         assert_eq!(count_handler.extract(&mut multifruits), 5);
         assert_eq!(topdocs_handler.extract(&mut multifruits).len(), 2);
+    }
+
+    #[test]
+    fn test_copy() {
+        let mut multi_fruit = MultiFruit {
+            sub_fruits: vec![Some(Box::new(1 as usize))],
+        };
+        let h = FruitHandle::<usize> {
+            pos: 0,
+            _phantom: PhantomData,
+        };
+        let h2 = h;
+        assert_eq!(h.extract(&mut multi_fruit), h2.extract(&mut multi_fruit));
     }
 }
