@@ -1,6 +1,6 @@
 [package]
 name = "tantivy"
-version = "0.14.0"
+version = "0.16.0-dev"
 authors = ["Paul Masurel <paul.masurel@gmail.com>"]
 license = "MIT"
 categories = ["database-implementations", "data-structures"]
@@ -21,7 +21,6 @@ regex ={ version = "1.5.4", default-features = false, features = ["std"] }
 tantivy-fst = "0.3"
 memmap = {version = "0.7", optional=true}
 lz4_flex = { version = "0.8.0", default-features = false, features = ["checked-decode"], optional = true }
-lz4 = { version = "1.23.2", optional = true }
 brotli = { version = "3.3", optional = true }
 snap = { version = "1.0.5", optional = true }
 tempfile = { version = "3.2", optional = true }
@@ -34,8 +33,11 @@ levenshtein_automata = "0.2"
 uuid = { version = "0.8.2", features = ["v4", "serde"] }
 crossbeam = "0.8"
 futures = { version = "0.3.15", features = ["thread-pool"] }
-tantivy-query-grammar = { version="0.14.0", path="./query-grammar" }
+tantivy-query-grammar = { version="0.15.0", path="./query-grammar" }
 tantivy-bitpacker = { version="0.1", path="./bitpacker" }
+common = { version="0.1", path="./common" }
+fastfield_codecs = { version="0.1", path="./fastfield_codecs", default-features = false }
+ownedbytes = { version="0.1", path="./ownedbytes" }
 stable_deref_trait = "1.2"
 rust-stemmers = "1.2"
 downcast-rs = "1.2"
@@ -52,6 +54,7 @@ rayon = "1.5"
 lru = "0.6.5"
 fastdivide = "0.3"
 itertools = "0.10.0"
+measure_time = "0.7.0"
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3.9"
@@ -77,18 +80,19 @@ debug-assertions = true
 overflow-checks = true
 
 [features]
-default = ["mmap", "lz4-block-compression" ]
+default = ["mmap", "lz4-compression" ]
 mmap = ["fs2", "tempfile", "memmap"]
+
 brotli-compression = ["brotli"]
-lz4-compression = ["lz4"]
-lz4-block-compression = ["lz4_flex"]
+lz4-compression = ["lz4_flex"]
 snappy-compression = ["snap"]
+
 failpoints = ["fail/failpoints"]
 unstable = [] # useful for benches.
 wasm-bindgen = ["uuid/wasm-bindgen"]
 
 [workspace]
-members = ["query-grammar", "bitpacker"]
+members = ["query-grammar", "bitpacker", "common", "fastfield_codecs", "ownedbytes"]
 
 [badges]
 travis-ci = { repository = "tantivy-search/tantivy" }

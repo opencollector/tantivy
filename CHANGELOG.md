@@ -1,3 +1,16 @@
+Tantivy 0.15.3
+=========================
+- Major bugfix. Deleting documents was broken when the index was sorted by a field. (@appaquet, @fulmicoton) #1101
+
+
+Tantivy 0.15.2
+========================
+- Major bugfix. DocStore still panics when a deleted doc is at the beginning of a block. (@appaquet) #1088
+
+Tantivy 0.15.1
+=========================
+- Major bugfix. DocStore panics when first block is deleted. (@appaquet) #1077
+
 Tantivy 0.15.0
 =========================
 - API Changes. Using Range instead of (start, end) in the API and internals (`FileSlice`, `OwnedBytes`, `Snippets`, ...)
@@ -8,11 +21,19 @@ Tantivy 0.15.0
 - Bugfix consistent tie break handling in facet's topk (@hardikpnsp) #357
 - Date field support for range queries (@rihardsk) #516
 - Added lz4-flex as the default compression scheme in tantivy (@PSeitz) #1009
-- Renamed a lot of symbols to avoid all uppercasing on acronyms, as per new clippy recommendation. For instance, RAMDirectory -> RamDirectory. (@pmasurel)
+- Renamed a lot of symbols to avoid all uppercasing on acronyms, as per new clippy recommendation. For instance, RAMDirectory -> RamDirectory. (@fulmicoton)
 - Simplified positions index format (@fulmicoton) #1022
 - Moved bitpacking to bitpacker subcrate and add BlockedBitpacker, which bitpacks blocks of 128 elements (@PSeitz) #1030
 - Added support for more-like-this query in tantivy (@evanxg852000) #1011
-- Added support for sorting an index, e.g presorting documents in an index by a timestamp field. This can heavily improve performance for certain scenarios, by utilizing the sorted data (Top-n optimizations). #1026
+- Added support for sorting an index, e.g presorting documents in an index by a timestamp field. This can heavily improve performance for certain scenarios, by utilizing the sorted data (Top-n optimizations)(@PSeitz). #1026
+- Add iterator over documents in doc store (@PSeitz). #1044
+- Fix log merge policy (@PSeitz). #1043
+- Add detection to avoid small doc store blocks on merge (@PSeitz). #1054
+- Make doc store compression dynamic (@PSeitz). #1060
+- Switch to json for footer version handling (@PSeitz). #1060
+- Updated TermMerger implementation to rely on the union feature of the FST (@scampi) #469
+- Add boolean marking whether position is required in the query_terms API call (@fulmicoton). #1070
+
 
 Tantivy 0.14.0
 =========================

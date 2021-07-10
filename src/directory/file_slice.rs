@@ -147,6 +147,13 @@ impl FileSlice {
         self.slice(from_offset..self.len())
     }
 
+    /// Returns a slice from the end.
+    ///
+    /// Equivalent to `.slice(self.len() - from_offset, self.len())`
+    pub fn slice_from_end(&self, from_offset: usize) -> FileSlice {
+        self.slice(self.len() - from_offset..self.len())
+    }
+
     /// Like `.slice(...)` but enforcing only the `to`
     /// boundary.
     ///
@@ -204,7 +211,7 @@ mod tests {
             assert_eq!(right.read_bytes()?.as_slice(), b"");
         }
         {
-            let (left, right) = file_slice.clone().split_from_end(2);
+            let (left, right) = file_slice.split_from_end(2);
             assert_eq!(left.read_bytes()?.as_slice(), b"abcd");
             assert_eq!(right.read_bytes()?.as_slice(), b"ef");
         }

@@ -22,7 +22,7 @@ use std::sync::atomic;
 pub struct SegmentId(Uuid);
 
 #[cfg(test)]
-static AUTO_INC_COUNTER: Lazy<atomic::AtomicUsize> = Lazy::new(|| atomic::AtomicUsize::default());
+static AUTO_INC_COUNTER: Lazy<atomic::AtomicUsize> = Lazy::new(atomic::AtomicUsize::default);
 
 #[cfg(test)]
 const ZERO_ARRAY: [u8; 8] = [0u8; 8];
@@ -103,6 +103,12 @@ impl FromStr for SegmentId {
 }
 
 impl fmt::Debug for SegmentId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Seg({:?})", self.short_uuid_string())
+    }
+}
+
+impl fmt::Display for SegmentId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Seg({:?})", self.short_uuid_string())
     }

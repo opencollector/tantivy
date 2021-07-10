@@ -2,7 +2,9 @@ use std::io;
 
 use crate::schema::{Document, Field, Value};
 use crate::DocId;
-use crate::{fastfield::serializer::FastFieldSerializer, indexer::doc_id_mapping::DocIdMapping};
+use crate::{
+    fastfield::serializer::CompositeFastFieldSerializer, indexer::doc_id_mapping::DocIdMapping,
+};
 
 /// Writer for byte array (as in, any number of bytes per document) fast fields
 ///
@@ -81,11 +83,11 @@ impl BytesFastFieldWriter {
         &'a self,
         doc_id_map: Option<&'b DocIdMapping>,
     ) -> impl Iterator<Item = &'b [u8]> {
-        let doc_id_iter = if let Some(doc_id_map) = doc_id_map {
-            Box::new(doc_id_map.iter_old_doc_ids().cloned()) as Box<dyn Iterator<Item = u32>>
+        let doc_id_iter: Box<dyn Iterator<Item = u32>> = if let Some(doc_id_map) = doc_id_map {
+            Box::new(doc_id_map.iter_old_doc_ids())
         } else {
-            Box::new(self.doc_index.iter().enumerate().map(|el| el.0 as u32))
-                as Box<dyn Iterator<Item = u32>>
+            let max_doc = self.doc_index.len() as u32;
+            Box::new(0..max_doc)
         };
         doc_id_iter.map(move |doc_id| self.get_values_for_doc_id(doc_id))
     }
@@ -104,7 +106,7 @@ impl BytesFastFieldWriter {
     /// Serializes the fast field values by pushing them to the `FastFieldSerializer`.
     pub fn serialize(
         &self,
-        serializer: &mut FastFieldSerializer,
+        serializer: &mut CompositeFastFieldSerializer,
         doc_id_map: Option<&DocIdMapping>,
     ) -> io::Result<()> {
         // writing the offset index

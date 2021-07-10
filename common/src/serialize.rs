@@ -1,5 +1,5 @@
-use crate::common::Endianness;
-use crate::common::VInt;
+use crate::Endianness;
+use crate::VInt;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::fmt;
 use std::io;
@@ -12,6 +12,20 @@ pub trait BinarySerializable: fmt::Debug + Sized {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()>;
     /// Deserialize
     fn deserialize<R: Read>(reader: &mut R) -> io::Result<Self>;
+}
+
+pub trait DeserializeFrom<T: BinarySerializable> {
+    fn deserialize(&mut self) -> io::Result<T>;
+}
+
+/// Implement deserialize from &[u8] for all types which implement BinarySerializable.
+///
+/// TryFrom would actually be preferrable, but not possible because of the orphan
+/// rules (not completely sure if this could be resolved)
+impl<T: BinarySerializable> DeserializeFrom<T> for &[u8] {
+    fn deserialize(&mut self) -> io::Result<T> {
+        T::deserialize(self)
+    }
 }
 
 /// `FixedSize` marks a `BinarySerializable` as
@@ -60,6 +74,11 @@ impl<Left: BinarySerializable, Right: BinarySerializable> BinarySerializable for
     fn deserialize<R: Read>(reader: &mut R) -> io::Result<Self> {
         Ok((Left::deserialize(reader)?, Right::deserialize(reader)?))
     }
+}
+impl<Left: BinarySerializable + FixedSize, Right: BinarySerializable + FixedSize> FixedSize
+    for (Left, Right)
+{
+    const SIZE_IN_BYTES: usize = Left::SIZE_IN_BYTES + Right::SIZE_IN_BYTES;
 }
 
 impl BinarySerializable for u32 {
@@ -141,6 +160,28 @@ impl FixedSize for u8 {
     const SIZE_IN_BYTES: usize = 1;
 }
 
+impl BinarySerializable for bool {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        let val = if *self { 1 } else { 0 };
+        writer.write_u8(val)
+    }
+    fn deserialize<R: Read>(reader: &mut R) -> io::Result<bool> {
+        let val = reader.read_u8()?;
+        match val {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid bool value on deserialization, data corrupted",
+            )),
+        }
+    }
+}
+
+impl FixedSize for bool {
+    const SIZE_IN_BYTES: usize = 1;
+}
+
 impl BinarySerializable for String {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         let data: &[u8] = self.as_bytes();
@@ -161,9 +202,9 @@ impl BinarySerializable for String {
 #[cfg(test)]
 pub mod test {
 
+    use super::VInt;
     use super::*;
-    use crate::common::VInt;
-
+    use crate::serialize::BinarySerializable;
     pub fn fixed_size_test<O: BinarySerializable + FixedSize + Default>() {
         let mut buffer = Vec::new();
         O::default().serialize(&mut buffer).unwrap();

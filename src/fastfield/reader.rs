@@ -4,47 +4,24 @@ use crate::common::CompositeFile;
 use crate::directory::FileSlice;
 use crate::directory::OwnedBytes;
 use crate::directory::{Directory, RamDirectory, WritePtr};
-use crate::fastfield::{FastFieldSerializer, FastFieldsWriter};
+use crate::fastfield::{CompositeFastFieldSerializer, FastFieldsWriter};
 use crate::schema::Schema;
 use crate::schema::FAST;
 use crate::DocId;
+use fastfield_codecs::bitpacked::BitpackedFastFieldReader as BitpackedReader;
+use fastfield_codecs::bitpacked::BitpackedFastFieldSerializer;
+use fastfield_codecs::linearinterpol::LinearInterpolFastFieldReader;
+use fastfield_codecs::linearinterpol::LinearInterpolFastFieldSerializer;
+use fastfield_codecs::multilinearinterpol::MultiLinearInterpolFastFieldReader;
+use fastfield_codecs::multilinearinterpol::MultiLinearInterpolFastFieldSerializer;
+use fastfield_codecs::FastFieldCodecReader;
+use fastfield_codecs::FastFieldCodecSerializer;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::Path;
-use tantivy_bitpacker::compute_num_bits;
-use tantivy_bitpacker::BitUnpacker;
 
-/// Trait for accessing a fastfield.
-///
-/// Depending on the field type, a different
-/// fast field is required.
-#[derive(Clone)]
-pub struct FastFieldReader<Item: FastValue> {
-    bytes: OwnedBytes,
-    bit_unpacker: BitUnpacker,
-    min_value_u64: u64,
-    max_value_u64: u64,
-    _phantom: PhantomData<Item>,
-}
-
-impl<Item: FastValue> FastFieldReader<Item> {
-    /// Opens a fast field given a file.
-    pub fn open(file: FileSlice) -> crate::Result<Self> {
-        let mut bytes = file.read_bytes()?;
-        let min_value = u64::deserialize(&mut bytes)?;
-        let amplitude = u64::deserialize(&mut bytes)?;
-        let max_value = min_value + amplitude;
-        let num_bits = compute_num_bits(amplitude);
-        let bit_unpacker = BitUnpacker::new(num_bits);
-        Ok(FastFieldReader {
-            bytes,
-            min_value_u64: min_value,
-            max_value_u64: max_value,
-            bit_unpacker,
-            _phantom: PhantomData,
-        })
-    }
-
+/// FastFieldReader is the trait to access fast field data.
+pub trait FastFieldReader<Item: FastValue>: Clone {
     /// Return the value associated to the given document.
     ///
     /// This accessor should return as fast as possible.
@@ -52,13 +29,154 @@ impl<Item: FastValue> FastFieldReader<Item> {
     /// # Panics
     ///
     /// May panic if `doc` is greater than the segment
-    // `maxdoc`.
-    pub fn get(&self, doc: DocId) -> Item {
-        self.get_u64(u64::from(doc))
-    }
+    fn get(&self, doc: DocId) -> Item;
 
+    /// Fills an output buffer with the fast field values
+    /// associated with the `DocId` going from
+    /// `start` to `start + output.len()`.
+    ///
+    /// Regardless of the type of `Item`, this method works
+    /// - transmuting the output array
+    /// - extracting the `Item`s as if they were `u64`
+    /// - possibly converting the `u64` value to the right type.
+    ///
+    /// # Panics
+    ///
+    /// May panic if `start + output.len()` is greater than
+    /// the segment's `maxdoc`.
+    fn get_range(&self, start: u64, output: &mut [Item]);
+
+    /// Returns the minimum value for this fast field.
+    ///
+    /// The min value does not take in account of possible
+    /// deleted document, and should be considered as a lower bound
+    /// of the actual mimimum value.
+    fn min_value(&self) -> Item;
+
+    /// Returns the maximum value for this fast field.
+    ///
+    /// The max value does not take in account of possible
+    /// deleted document, and should be considered as an upper bound
+    /// of the actual maximum value.
+    fn max_value(&self) -> Item;
+}
+
+#[derive(Clone)]
+/// DynamicFastFieldReader wraps different readers to access
+/// the various encoded fastfield data
+///
+pub enum DynamicFastFieldReader<Item: FastValue> {
+    /// Bitpacked compressed fastfield data.
+    Bitpacked(FastFieldReaderCodecWrapper<Item, BitpackedReader>),
+    /// Linear interpolated values + bitpacked
+    LinearInterpol(FastFieldReaderCodecWrapper<Item, LinearInterpolFastFieldReader>),
+    /// Blockwise linear interpolated values + bitpacked
+    MultiLinearInterpol(FastFieldReaderCodecWrapper<Item, MultiLinearInterpolFastFieldReader>),
+}
+
+impl<Item: FastValue> DynamicFastFieldReader<Item> {
+    /// Returns correct the reader wrapped in the `DynamicFastFieldReader` enum for the data.
+    pub fn open(file: FileSlice) -> crate::Result<DynamicFastFieldReader<Item>> {
+        let mut bytes = file.read_bytes()?;
+        let id = bytes.read_u8();
+
+        let reader = match id {
+            BitpackedFastFieldSerializer::ID => {
+                DynamicFastFieldReader::Bitpacked(FastFieldReaderCodecWrapper::<
+                    Item,
+                    BitpackedReader,
+                >::open_from_bytes(bytes)?)
+            }
+            LinearInterpolFastFieldSerializer::ID => {
+                DynamicFastFieldReader::LinearInterpol(FastFieldReaderCodecWrapper::<
+                    Item,
+                    LinearInterpolFastFieldReader,
+                >::open_from_bytes(bytes)?)
+            }
+            MultiLinearInterpolFastFieldSerializer::ID => {
+                DynamicFastFieldReader::MultiLinearInterpol(FastFieldReaderCodecWrapper::<
+                    Item,
+                    MultiLinearInterpolFastFieldReader,
+                >::open_from_bytes(
+                    bytes
+                )?)
+            }
+            _ => {
+                panic!(
+                    "unknown fastfield id {:?}. Data corrupted or using old tantivy version.",
+                    id
+                )
+            }
+        };
+        Ok(reader)
+    }
+}
+
+impl<Item: FastValue> FastFieldReader<Item> for DynamicFastFieldReader<Item> {
+    fn get(&self, doc: DocId) -> Item {
+        match self {
+            Self::Bitpacked(reader) => reader.get(doc),
+            Self::LinearInterpol(reader) => reader.get(doc),
+            Self::MultiLinearInterpol(reader) => reader.get(doc),
+        }
+    }
+    fn get_range(&self, start: u64, output: &mut [Item]) {
+        match self {
+            Self::Bitpacked(reader) => reader.get_range(start, output),
+            Self::LinearInterpol(reader) => reader.get_range(start, output),
+            Self::MultiLinearInterpol(reader) => reader.get_range(start, output),
+        }
+    }
+    fn min_value(&self) -> Item {
+        match self {
+            Self::Bitpacked(reader) => reader.min_value(),
+            Self::LinearInterpol(reader) => reader.min_value(),
+            Self::MultiLinearInterpol(reader) => reader.min_value(),
+        }
+    }
+    fn max_value(&self) -> Item {
+        match self {
+            Self::Bitpacked(reader) => reader.max_value(),
+            Self::LinearInterpol(reader) => reader.max_value(),
+            Self::MultiLinearInterpol(reader) => reader.max_value(),
+        }
+    }
+}
+
+/// Wrapper for accessing a fastfield.
+///
+/// Holds the data and the codec to the read the data.
+///
+#[derive(Clone)]
+pub struct FastFieldReaderCodecWrapper<Item: FastValue, CodecReader> {
+    reader: CodecReader,
+    bytes: OwnedBytes,
+    _phantom: PhantomData<Item>,
+}
+
+impl<Item: FastValue, C: FastFieldCodecReader> FastFieldReaderCodecWrapper<Item, C> {
+    /// Opens a fast field given a file.
+    pub fn open(file: FileSlice) -> crate::Result<Self> {
+        let mut bytes = file.read_bytes()?;
+        let id = u8::deserialize(&mut bytes)?;
+        assert_eq!(
+            BitpackedFastFieldSerializer::ID,
+            id,
+            "Tried to open fast field as bitpacked encoded (id=1), but got serializer with different id"
+        );
+        Self::open_from_bytes(bytes)
+    }
+    /// Opens a fast field given the bytes.
+    pub fn open_from_bytes(bytes: OwnedBytes) -> crate::Result<Self> {
+        let reader = C::open_from_bytes(bytes.as_slice())?;
+        Ok(FastFieldReaderCodecWrapper {
+            reader,
+            bytes,
+            _phantom: PhantomData,
+        })
+    }
     pub(crate) fn get_u64(&self, doc: u64) -> Item {
-        Item::from_u64(self.min_value_u64 + self.bit_unpacker.get(doc, &self.bytes))
+        Item::from_u64(self.reader.get_u64(doc, self.bytes.as_slice()))
     }
 
     /// Internally `multivalued` also use SingleValue Fast fields.
@@ -78,6 +196,22 @@ impl<Item: FastValue> FastFieldReader<Item> {
             *out = self.get_u64(start + (i as u64));
         }
     }
+}
+
+impl<Item: FastValue, C: FastFieldCodecReader + Clone> FastFieldReader<Item>
+    for FastFieldReaderCodecWrapper<Item, C>
+{
+    /// Return the value associated to the given document.
+    ///
+    /// This accessor should return as fast as possible.
+    ///
+    /// # Panics
+    ///
+    /// May panic if `doc` is greater than the segment
+    // `maxdoc`.
+    fn get(&self, doc: DocId) -> Item {
+        self.get_u64(u64::from(doc))
+    }
 
     /// Fills an output buffer with the fast field values
     /// associated with the `DocId` going from
@@ -92,8 +226,8 @@ impl<Item: FastValue> FastFieldReader<Item> {
     ///
     /// May panic if `start + output.len()` is greater than
     /// the segment's `maxdoc`.
-    pub fn get_range(&self, start: DocId, output: &mut [Item]) {
-        self.get_range_u64(u64::from(start), output);
+    fn get_range(&self, start: u64, output: &mut [Item]) {
+        self.get_range_u64(start, output);
     }
 
     /// Returns the minimum value for this fast field.
@@ -101,8 +235,8 @@ impl<Item: FastValue> FastFieldReader<Item> {
     /// The max value does not take in account of possible
     /// deleted document, and should be considered as an upper bound
     /// of the actual maximum value.
-    pub fn min_value(&self) -> Item {
-        Item::from_u64(self.min_value_u64)
+    fn min_value(&self) -> Item {
+        Item::from_u64(self.reader.min_value())
     }
 
     /// Returns the maximum value for this fast field.
@@ -110,13 +244,15 @@ impl<Item: FastValue> FastFieldReader<Item> {
     /// The max value does not take in account of possible
     /// deleted document, and should be considered as an upper bound
     /// of the actual maximum value.
-    pub fn max_value(&self) -> Item {
-        Item::from_u64(self.max_value_u64)
+    fn max_value(&self) -> Item {
+        Item::from_u64(self.reader.max_value())
     }
 }
 
-impl<Item: FastValue> From<Vec<Item>> for FastFieldReader<Item> {
-    fn from(vals: Vec<Item>) -> FastFieldReader<Item> {
+pub(crate) type BitpackedFastFieldReader<Item> = FastFieldReaderCodecWrapper<Item, BitpackedReader>;
+
+impl<Item: FastValue> From<Vec<Item>> for DynamicFastFieldReader<Item> {
+    fn from(vals: Vec<Item>) -> DynamicFastFieldReader<Item> {
         let mut schema_builder = Schema::builder();
         let field = schema_builder.add_u64_field("field", FAST);
         let schema = schema_builder.build();
@@ -126,7 +262,7 @@ impl<Item: FastValue> From<Vec<Item>> for FastFieldReader<Item> {
             let write: WritePtr = directory
                 .open_write(path)
                 .expect("With a RamDirectory, this should never fail.");
-            let mut serializer = FastFieldSerializer::from_write(write)
+            let mut serializer = CompositeFastFieldSerializer::from_write(write)
                 .expect("With a RamDirectory, this should never fail.");
             let mut fast_field_writers = FastFieldsWriter::from_schema(&schema);
             {
@@ -148,6 +284,6 @@ impl<Item: FastValue> From<Vec<Item>> for FastFieldReader<Item> {
         let field_file = composite_file
             .open_read(field)
             .expect("File component not found");
-        FastFieldReader::open(field_file).unwrap()
+        DynamicFastFieldReader::open(field_file).unwrap()
     }
 }

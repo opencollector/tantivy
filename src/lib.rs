@@ -1,6 +1,13 @@
 #![doc(html_logo_url = "http://fulmicoton.com/tantivy-logo/tantivy-logo.png")]
 #![cfg_attr(all(feature = "unstable", test), feature(test))]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::module_inception))]
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(
+        clippy::module_inception,
+        clippy::needless_range_loop,
+        clippy::bool_assert_comparison
+    )
+)]
 #![doc(test(attr(allow(unused_variables), deny(warnings))))]
 #![warn(missing_docs)]
 
@@ -100,7 +107,6 @@
 
 #[cfg_attr(test, macro_use)]
 extern crate serde_json;
-
 #[macro_use]
 extern crate log;
 
@@ -178,7 +184,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 /// Index format version.
-const INDEX_FORMAT_VERSION: u32 = 3;
+const INDEX_FORMAT_VERSION: u32 = 4;
 
 /// Structure version for the index.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +193,6 @@ pub struct Version {
     minor: u32,
     patch: u32,
     index_format_version: u32,
-    store_compression: String,
 }
 
 impl fmt::Debug for Version {
@@ -201,14 +206,13 @@ static VERSION: Lazy<Version> = Lazy::new(|| Version {
     minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
     patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
     index_format_version: INDEX_FORMAT_VERSION,
-    store_compression: crate::store::COMPRESSION.to_string(),
 });
 
 impl ToString for Version {
     fn to_string(&self) -> String {
         format!(
-            "tantivy v{}.{}.{}, index_format v{}, store_compression: {}",
-            self.major, self.minor, self.patch, self.index_format_version, self.store_compression
+            "tantivy v{}.{}.{}, index_format v{}",
+            self.major, self.minor, self.patch, self.index_format_version
         )
     }
 }
@@ -293,6 +297,7 @@ mod tests {
     use crate::collector::tests::TEST_COLLECTOR_WITH_SCORE;
     use crate::core::SegmentReader;
     use crate::docset::{DocSet, TERMINATED};
+    use crate::fastfield::FastFieldReader;
     use crate::query::BooleanQuery;
     use crate::schema::*;
     use crate::DocAddress;
@@ -935,7 +940,7 @@ mod tests {
         let id = schema_builder.add_u64_field("id", INDEXED);
         let schema = schema_builder.build();
 
-        let index = Index::create_in_ram(schema.clone());
+        let index = Index::create_in_ram(schema);
         let index_reader = index.reader()?;
 
         let mut index_writer = index.writer_for_tests()?;
@@ -974,7 +979,7 @@ mod tests {
         let searcher = index_reader.searcher();
         let segment_ids: Vec<SegmentId> = searcher
             .segment_readers()
-            .into_iter()
+            .iter()
             .map(|reader| reader.segment_id())
             .collect();
         block_on(index_writer.merge(&segment_ids)).unwrap();

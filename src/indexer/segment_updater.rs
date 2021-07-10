@@ -1,11 +1,10 @@
-use super::segment_manager::{get_mergeable_segments, SegmentManager};
+use super::segment_manager::SegmentManager;
 use crate::core::Index;
 use crate::core::IndexMeta;
 use crate::core::IndexSettings;
 use crate::core::Segment;
 use crate::core::SegmentId;
 use crate::core::SegmentMeta;
-use crate::core::SerializableSegment;
 use crate::core::META_FILEPATH;
 use crate::directory::{Directory, DirectoryClone, GarbageCollectionResult};
 use crate::indexer::delete_queue::DeleteCursor;
@@ -140,7 +139,7 @@ fn merge(
     // ... we just serialize this index merger in our new segment to merge the segments.
     let segment_serializer = SegmentSerializer::for_segment(merged_segment.clone(), true)?;
 
-    let num_docs = merger.write(segment_serializer, None)?;
+    let num_docs = merger.write(segment_serializer)?;
 
     let merged_segment_id = merged_segment.id();
 
@@ -209,7 +208,7 @@ pub fn merge_segments<Dir: Directory>(
         &segments[..],
     )?;
     let segment_serializer = SegmentSerializer::for_segment(merged_segment, true)?;
-    let num_docs = merger.write(segment_serializer, None)?;
+    let num_docs = merger.write(segment_serializer)?;
 
     let segment_meta = merged_index.new_segment_meta(merged_segment_id, num_docs);
 
@@ -528,10 +527,14 @@ impl SegmentUpdater {
         }))
     }
 
-    async fn consider_merge_options(&self) {
+    pub(crate) fn get_mergeable_segments(&self) -> (Vec<SegmentMeta>, Vec<SegmentMeta>) {
         let merge_segment_ids: HashSet<SegmentId> = self.merge_operations.segment_in_merge();
-        let (committed_segments, uncommitted_segments) =
-            get_mergeable_segments(&merge_segment_ids, &self.segment_manager);
+        self.segment_manager
+            .get_mergeable_segments(&merge_segment_ids)
+    }
+
+    async fn consider_merge_options(&self) {
+        let (committed_segments, uncommitted_segments) = self.get_mergeable_segments();
 
         // Committed segments cannot be merged with uncommitted_segments.
         // We therefore consider merges using these two sets of segments independently.
@@ -717,7 +720,7 @@ mod tests {
 
         let seg_ids = index.searchable_segment_ids()?;
         // docs exist, should have at least 1 segment
-        assert!(seg_ids.len() > 0);
+        assert!(!seg_ids.is_empty());
 
         let term_vals = vec!["a", "b", "c", "d", "e", "f"];
         for term_val in term_vals {

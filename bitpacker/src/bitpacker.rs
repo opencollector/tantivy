@@ -17,6 +17,7 @@ impl BitPacker {
         }
     }
 
+    #[inline]
     pub fn write<TWrite: io::Write>(
         &mut self,
         val: u64,
@@ -48,6 +49,7 @@ impl BitPacker {
             let bytes = self.mini_buffer.to_le_bytes();
             output.write_all(&bytes[..num_bytes])?;
             self.mini_buffer_written = 0;
+            self.mini_buffer = 0;
         }
         Ok(())
     }
@@ -60,7 +62,7 @@ impl BitPacker {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct BitUnpacker {
     num_bits: u64,
     mask: u64,
@@ -79,6 +81,7 @@ impl BitUnpacker {
         }
     }
 
+    #[inline]
     pub fn get(&self, idx: u64, data: &[u8]) -> u64 {
         if self.num_bits == 0 {
             return 0u64;

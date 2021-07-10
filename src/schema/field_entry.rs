@@ -23,6 +23,15 @@ pub struct FieldEntry {
 }
 
 impl FieldEntry {
+    /// Creates a new field entry given a name and a field type
+    pub fn new(field_name: String, field_type: FieldType) -> FieldEntry {
+        assert!(is_valid_field_name(&field_name));
+        FieldEntry {
+            name: field_name,
+            field_type,
+        }
+    }
+
     /// Creates a new u64 field entry in the schema, given
     /// a name, and some options.
     pub fn new_text(field_name: String, text_options: TextOptions) -> FieldEntry {
@@ -308,7 +317,7 @@ mod tests {
         assert_eq!("title", field_value.name);
 
         match field_value.field_type {
-            FieldType::Str(_) => assert!(true),
+            FieldType::Str(_) => {}
             _ => panic!("expected FieldType::Str"),
         }
     }
