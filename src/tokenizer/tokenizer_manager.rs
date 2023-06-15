@@ -5,6 +5,7 @@ use crate::tokenizer::RawTokenizer;
 use crate::tokenizer::RemoveLongFilter;
 use crate::tokenizer::SimpleTokenizer;
 use crate::tokenizer::Stemmer;
+use crate::tokenizer::WhitespaceTokenizer;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -81,6 +82,7 @@ impl Default for TokenizerManager {
                 .filter(LowerCaser)
                 .filter(Stemmer::new(Language::English)),
         );
+        manager.register("whitespace", WhitespaceTokenizer);
         manager
     }
 }

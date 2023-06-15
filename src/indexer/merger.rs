@@ -5,6 +5,7 @@ use crate::fastfield::DynamicFastFieldReader;
 use crate::fastfield::FastFieldDataAccess;
 use crate::fastfield::FastFieldReader;
 use crate::fastfield::FastFieldStats;
+use crate::fastfield::MultiValueLength;
 use crate::fastfield::MultiValuedFastFieldReader;
 use crate::fieldnorm::FieldNormsSerializer;
 use crate::fieldnorm::FieldNormsWriter;
@@ -19,9 +20,8 @@ use crate::schema::{Field, Schema};
 use crate::store::StoreWriter;
 use crate::termdict::TermMerger;
 use crate::termdict::TermOrdinal;
+use crate::IndexSettings;
 use crate::IndexSortByField;
-use crate::{common::HasLen, fastfield::MultiValueLength};
-use crate::{common::MAX_DOC_LIMIT, IndexSettings};
 use crate::{core::Segment, indexer::doc_id_mapping::expect_field_id_for_sort_field};
 use crate::{core::SegmentReader, Order};
 use crate::{
@@ -29,12 +29,18 @@ use crate::{
     SegmentOrdinal,
 };
 use crate::{DocId, InvertedIndexReader, SegmentComponent};
+use common::HasLen;
 use itertools::Itertools;
 use measure_time::debug_time;
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tantivy_bitpacker::minmax;
+
+/// Segment's max doc must be `< MAX_DOC_LIMIT`.
+///
+/// We do not allow segments with more than
+pub const MAX_DOC_LIMIT: u32 = 1 << 31;
 
 fn compute_total_num_tokens(readers: &[SegmentReader], field: Field) -> crate::Result<u64> {
     let mut total_tokens = 0u64;
@@ -144,7 +150,7 @@ impl TermOrdinalMapping {
             .iter()
             .flat_map(|term_ordinals| term_ordinals.iter().cloned().max())
             .max()
-            .unwrap_or_else(TermOrdinal::default)
+            .unwrap_or_default()
     }
 }
 
@@ -495,10 +501,10 @@ impl IndexMerger {
         //
         // This is required by the bitpacker, as it needs to know
         // what should be the bit length use for bitpacking.
-        let mut idx_num_vals = 0;
+        let mut num_docs = 0;
         for (reader, u64s_reader) in reader_and_field_accessors.iter() {
             if let Some(delete_bitset) = reader.delete_bitset() {
-                idx_num_vals += reader.max_doc() as u64 - delete_bitset.len() as u64;
+                num_docs += reader.max_doc() as u64 - delete_bitset.len() as u64;
                 for doc in 0u32..reader.max_doc() {
                     if delete_bitset.is_alive(doc) {
                         let num_vals = u64s_reader.get_len(doc) as u64;
@@ -506,14 +512,15 @@ impl IndexMerger {
                     }
                 }
             } else {
-                idx_num_vals += reader.max_doc() as u64;
+                num_docs += reader.max_doc() as u64;
                 total_num_vals += u64s_reader.get_total_len();
             }
         }
 
         let stats = FastFieldStats {
             max_value: total_num_vals,
-            num_vals: idx_num_vals,
+            // The fastfield offset index contains (num_docs + 1) values.
+            num_vals: num_docs + 1,
             min_value: 0,
         };
         // We can now create our `idx` serializer, and in a second pass,
@@ -958,12 +965,13 @@ impl IndexMerger {
             }
             if !doc_id_mapping.is_trivial() {
                 doc_id_and_positions.sort_unstable_by_key(|&(doc_id, _, _)| doc_id);
+
                 for (doc_id, term_freq, positions) in &doc_id_and_positions {
-                    field_serializer.write_doc(*doc_id, *term_freq, positions);
+                    let delta_positions = delta_computer.compute_delta(positions);
+                    field_serializer.write_doc(*doc_id, *term_freq, delta_positions);
                 }
                 doc_id_and_positions.clear();
             }
-
             // closing the term.
             field_serializer.close_term()?;
         }
@@ -2073,5 +2081,12 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_max_doc() {
+        // this is the first time I write a unit test for a constant.
+        assert!(((super::MAX_DOC_LIMIT - 1) as i32) >= 0);
+        assert!((super::MAX_DOC_LIMIT as i32) < 0);
     }
 }

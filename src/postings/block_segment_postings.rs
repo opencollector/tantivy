@@ -1,16 +1,14 @@
 use std::io;
 
-use crate::common::{BinarySerializable, VInt};
 use crate::directory::FileSlice;
 use crate::directory::OwnedBytes;
 use crate::fieldnorm::FieldNormReader;
-use crate::postings::compression::{
-    AlignedBuffer, BlockDecoder, VIntDecoder, COMPRESSION_BLOCK_SIZE,
-};
+use crate::postings::compression::{BlockDecoder, VIntDecoder, COMPRESSION_BLOCK_SIZE};
 use crate::postings::{BlockInfo, FreqReadingOption, SkipReader};
 use crate::query::Bm25Weight;
 use crate::schema::IndexRecordOption;
 use crate::{DocId, Score, TERMINATED};
+use common::{BinarySerializable, VInt};
 
 fn max_score<I: Iterator<Item = Score>>(mut it: I) -> Option<Score> {
     it.next().map(|first| it.fold(first, Score::max))
@@ -209,9 +207,9 @@ impl BlockSegmentPostings {
     ///
     /// This method is useful to run SSE2 linear search.
     #[inline]
-    pub(crate) fn docs_aligned(&self) -> &AlignedBuffer {
+    pub(crate) fn full_block(&self) -> &[DocId; COMPRESSION_BLOCK_SIZE] {
         debug_assert!(self.block_is_loaded());
-        self.doc_decoder.output_aligned()
+        self.doc_decoder.full_output()
     }
 
     /// Return the document at index `idx` of the block.
@@ -349,7 +347,6 @@ impl BlockSegmentPostings {
 #[cfg(test)]
 mod tests {
     use super::BlockSegmentPostings;
-    use crate::common::HasLen;
     use crate::core::Index;
     use crate::docset::{DocSet, TERMINATED};
     use crate::postings::compression::COMPRESSION_BLOCK_SIZE;
@@ -360,6 +357,7 @@ mod tests {
     use crate::schema::Term;
     use crate::schema::INDEXED;
     use crate::DocId;
+    use common::HasLen;
 
     #[test]
     fn test_empty_segment_postings() {

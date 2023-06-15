@@ -1,7 +1,6 @@
 use super::TermInfo;
-use crate::common::{BinarySerializable, VInt};
-use crate::common::{CompositeWrite, CountingWriter};
 use crate::core::Segment;
+use crate::directory::CompositeWrite;
 use crate::directory::WritePtr;
 use crate::fieldnorm::FieldNormReader;
 use crate::positions::PositionSerializer;
@@ -12,6 +11,8 @@ use crate::schema::{Field, FieldEntry, FieldType};
 use crate::schema::{IndexRecordOption, Schema};
 use crate::termdict::{TermDictionaryBuilder, TermOrdinal};
 use crate::{DocId, Score};
+use common::CountingWriter;
+use common::{BinarySerializable, VInt};
 use std::cmp::Ordering;
 use std::io::{self, Write};
 
@@ -442,10 +443,8 @@ impl<W: Write> PostingsSerializer<W> {
             let skip_data = self.skip_write.data();
             VInt(skip_data.len() as u64).serialize(&mut self.output_write)?;
             self.output_write.write_all(skip_data)?;
-            self.output_write.write_all(&self.postings_write[..])?;
-        } else {
-            self.output_write.write_all(&self.postings_write[..])?;
         }
+        self.output_write.write_all(&self.postings_write[..])?;
         self.skip_write.clear();
         self.postings_write.clear();
         self.bm25_weight = None;

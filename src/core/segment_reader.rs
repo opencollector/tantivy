@@ -2,7 +2,9 @@ use crate::core::InvertedIndexReader;
 use crate::core::Segment;
 use crate::core::SegmentComponent;
 use crate::core::SegmentId;
+use crate::directory::CompositeFile;
 use crate::directory::FileSlice;
+use crate::error::DataCorruption;
 use crate::fastfield::DeleteBitSet;
 use crate::fastfield::FacetReader;
 use crate::fastfield::FastFieldReaders;
@@ -14,7 +16,6 @@ use crate::space_usage::SegmentSpaceUsage;
 use crate::store::StoreReader;
 use crate::termdict::TermDictionary;
 use crate::DocId;
-use crate::{common::CompositeFile, error::DataCorruption};
 use fail::fail_point;
 use std::fmt;
 use std::sync::Arc;
@@ -31,9 +32,6 @@ use std::{collections::HashMap, io};
 ///
 /// The segment reader has a very low memory footprint,
 /// as close to all of the memory data is mmapped.
-///
-///
-/// TODO fix not decoding docfreq
 #[derive(Clone)]
 pub struct SegmentReader {
     inv_idx_reader_cache: Arc<RwLock<HashMap<Field, Arc<InvertedIndexReader>>>>,
@@ -56,15 +54,12 @@ pub struct SegmentReader {
 impl SegmentReader {
     /// Returns the highest document id ever attributed in
     /// this segment + 1.
-    /// Today, `tantivy` does not handle deletes, so it happens
-    /// to also be the number of documents in the index.
     pub fn max_doc(&self) -> DocId {
         self.max_doc
     }
 
     /// Returns the number of alive documents.
     /// Deleted documents are not counted.
-    ///
     pub fn num_docs(&self) -> DocId {
         self.num_docs
     }

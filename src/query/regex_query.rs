@@ -10,6 +10,9 @@ use tantivy_fst::Regex;
 /// containing a specific term that matches
 /// a regex pattern.
 ///
+/// Wildcard queries (e.g. ho*se) can be achieved
+/// by converting them to their regex counterparts.
+///
 /// ```rust
 /// use tantivy::collector::Count;
 /// use tantivy::query::RegexQuery;

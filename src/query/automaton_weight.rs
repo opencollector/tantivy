@@ -1,4 +1,3 @@
-use crate::common::BitSet;
 use crate::core::SegmentReader;
 use crate::query::ConstScorer;
 use crate::query::{BitSetDocSet, Explanation};
@@ -7,6 +6,7 @@ use crate::schema::{Field, IndexRecordOption};
 use crate::termdict::{TermDictionary, TermStreamer};
 use crate::TantivyError;
 use crate::{DocId, Score};
+use common::BitSet;
 use std::io;
 use std::sync::Arc;
 use tantivy_fst::Automaton;
@@ -121,10 +121,7 @@ mod tests {
         }
 
         fn is_match(&self, state: &Self::State) -> bool {
-            match *state {
-                State::AfterA => true,
-                _ => false,
-            }
+            matches!(*state, State::AfterA)
         }
 
         fn accept(&self, state: &Self::State, byte: u8) -> Self::State {
